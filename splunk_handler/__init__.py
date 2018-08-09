@@ -44,11 +44,12 @@ class SplunkHandler(logging.Handler):
     A logging handler to send events to a Splunk Enterprise instance
     running the Splunk HTTP Event Collector.
     """
-    def __init__(self, host, port, token, index,
+    def __init__(self, host, token, index, port=None,
                  hostname=None, source=None, sourcetype='text',
                  verify=True, timeout=60, flush_interval=15.0,
                  queue_size=5000, debug=False, retry_count=5,
-                 retry_backoff=2.0):
+                 retry_backoff=2.0, override_endpoint=None, include_source=True,
+                 include_host=True):
 
         global instances
         instances.append(self)
@@ -73,6 +74,9 @@ class SplunkHandler(logging.Handler):
         self.session = requests.Session()
         self.retry_count = retry_count
         self.retry_backoff = retry_backoff
+        self.override_endpoint = override_endpoint
+        self.include_source = include_source
+        self.include_host = include_host
 
         self.write_debug_log("Starting debug mode")
 
@@ -164,12 +168,16 @@ class SplunkHandler(logging.Handler):
 
         params = {
             'time': current_time,
-            'host': self.hostname,
             'index': self.index,
-            'source': source,
             'sourcetype': self.sourcetype,
             'event': self.format(record),
         }
+
+        if self.include_host:
+            params.update({'host': self.hostname})
+
+        if self.include_source:
+            params.update({'source': source})
 
         self.write_debug_log("Record dictionary created")
 
@@ -193,7 +201,13 @@ class SplunkHandler(logging.Handler):
 
         if payload:
             self.write_debug_log("Payload available for sending")
-            url = 'https://%s:%s/services/collector' % (self.host, self.port)
+            if self.override_endpoint:
+                endpoint = self.override_endpoint
+            else:
+                endpoint = 'services/collector'
+            url = 'https://%s%s/%s' % (self.host,
+                                       ':' + self.port if self.port else '',
+                                       endpoint)
             self.write_debug_log("Destination URL is " + url)
 
             try:
